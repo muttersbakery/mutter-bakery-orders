@@ -153,7 +153,8 @@
           <option value="1">1 loaf</option>
           <option value="2">2 loaves</option>
         </select>
-        <div class="note">Maximum 2 loaves per order.</div>
+        <div class="note" id="priceNote">Maximum 2 loaves per order.</div>
+        <div class="note" id="liveTotal" style="font-weight:bold;"></div>
 
         <label for="pickupDate">Preferred pickup date</label>
         <select id="pickupDate" required></select>
@@ -177,19 +178,31 @@
   <script>
     // Your Apps Script Web App /exec URL (the JSON API backend). Update
     // this if you ever redeploy the script under a different deployment.
-    var API_URL = 'https://script.google.com/macros/s/AKfycbxmelMnjZpA10mq0lQsdRv4RgYQxG35IJi3CywT1xE_2bmNROCzM2bp-_b7MMdpM7kQXA/exec';
+    var API_URL = 'https://script.google.com/macros/s/AKfycby8aysNAbuL7SSq1CreeoojH2bCuwdUYl-Ksn7JKahjAS47VKP4WbI9emf9UhbJ2wBR/exec';
 
     var loadingNote = document.getElementById('loadingNote');
     var form = document.getElementById('orderForm');
     var msg = document.getElementById('msg');
     var pickupSelect = document.getElementById('pickupDate');
+    var loavesSelect = document.getElementById('loaves');
+    var priceNote = document.getElementById('priceNote');
+    var liveTotal = document.getElementById('liveTotal');
+
+    var PRICE_PER_LOAF = 150; // fallback; overwritten by the API response on load
+    var CURRENCY = 'EGP';
+
+    function updateLiveTotal() {
+      var qty = Number(loavesSelect.value) || 1;
+      liveTotal.textContent = 'Total: ' + (qty * PRICE_PER_LOAF) + ' ' + CURRENCY;
+    }
+    loavesSelect.addEventListener('change', updateLiveTotal);
 
     function showMsg(kind, text) {
       msg.className = 'msg ' + kind;
       msg.textContent = text;
     }
 
-    // Load available pickup dates on page load.
+    // Load available pickup dates (and current pricing) on page load.
     fetch(API_URL)
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -198,6 +211,12 @@
           showMsg('err', data.error || 'Could not load available dates.');
           return;
         }
+        if (data.pricePerLoaf) { PRICE_PER_LOAF = data.pricePerLoaf; }
+        if (data.currency) { CURRENCY = data.currency; }
+        loavesSelect.options[0].textContent = '1 loaf (' + PRICE_PER_LOAF + ' ' + CURRENCY + ')';
+        loavesSelect.options[1].textContent = '2 loaves (' + (PRICE_PER_LOAF * 2) + ' ' + CURRENCY + ')';
+        priceNote.textContent = 'Maximum 2 loaves per order. ' + PRICE_PER_LOAF + ' ' + CURRENCY + ' per loaf.';
+        updateLiveTotal();
         if (!data.options || data.options.length === 0) {
           showMsg('err', 'No pickup slots are currently available. Please check back soon!');
           return;
@@ -263,6 +282,7 @@
       document.getElementById('orderDetails').innerHTML =
         '<div><b>Order ID:</b> ' + res.orderId + '</div>' +
         '<div><b>Loaves:</b> ' + res.loaves + '</div>' +
+        '<div><b>Total:</b> ' + res.total + ' ' + res.currency + '</div>' +
         '<div><b>Pickup date:</b> ' + res.pickupDateLabel + '</div>';
     }
 
