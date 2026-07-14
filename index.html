@@ -148,12 +148,12 @@
         <label for="email">Email address</label>
         <input type="email" id="email" required>
 
-        <label for="loaves">Number of loaves</label>
-        <select id="loaves" required>
-          <option value="1">1 loaf</option>
-          <option value="2">2 loaves</option>
-        </select>
-        <div class="note" id="priceNote">Maximum 2 loaves per order.</div>
+        <label for="loaf1">Loaf 1 flavor</label>
+        <select id="loaf1" required></select>
+
+        <label for="loaf2">Loaf 2 flavor (optional)</label>
+        <select id="loaf2"></select>
+        <div class="note" id="priceNote">Order 1 or 2 loaves, max 2 per order — flavors can be mixed.</div>
         <div class="note" id="liveTotal" style="font-weight:bold;"></div>
 
         <label for="pickupDate">Preferred pickup date</label>
@@ -184,18 +184,29 @@
     var form = document.getElementById('orderForm');
     var msg = document.getElementById('msg');
     var pickupSelect = document.getElementById('pickupDate');
-    var loavesSelect = document.getElementById('loaves');
+    var loaf1Select = document.getElementById('loaf1');
+    var loaf2Select = document.getElementById('loaf2');
     var priceNote = document.getElementById('priceNote');
     var liveTotal = document.getElementById('liveTotal');
 
-    var PRICE_PER_LOAF = 150; // fallback; overwritten by the API response on load
+    var FLAVORS = []; // fallback; overwritten by the API response on load
     var CURRENCY = 'EGP';
 
-    function updateLiveTotal() {
-      var qty = Number(loavesSelect.value) || 1;
-      liveTotal.textContent = 'Total: ' + (qty * PRICE_PER_LOAF) + ' ' + CURRENCY;
+    function flavorByKey(key) {
+      for (var i = 0; i < FLAVORS.length; i++) {
+        if (FLAVORS[i].key === key) return FLAVORS[i];
+      }
+      return null;
     }
-    loavesSelect.addEventListener('change', updateLiveTotal);
+
+    function updateLiveTotal() {
+      var f1 = flavorByKey(loaf1Select.value);
+      var f2 = loaf2Select.value !== 'none' ? flavorByKey(loaf2Select.value) : null;
+      var total = (f1 ? f1.price : 0) + (f2 ? f2.price : 0);
+      liveTotal.textContent = 'Total: ' + total + ' ' + CURRENCY;
+    }
+    loaf1Select.addEventListener('change', updateLiveTotal);
+    loaf2Select.addEventListener('change', updateLiveTotal);
 
     function showMsg(kind, text) {
       msg.className = 'msg ' + kind;
@@ -211,11 +222,24 @@
           showMsg('err', data.error || 'Could not load available dates.');
           return;
         }
-        if (data.pricePerLoaf) { PRICE_PER_LOAF = data.pricePerLoaf; }
+        if (data.flavors && data.flavors.length) { FLAVORS = data.flavors; }
         if (data.currency) { CURRENCY = data.currency; }
-        loavesSelect.options[0].textContent = '1 loaf (' + PRICE_PER_LOAF + ' ' + CURRENCY + ')';
-        loavesSelect.options[1].textContent = '2 loaves (' + (PRICE_PER_LOAF * 2) + ' ' + CURRENCY + ')';
-        priceNote.textContent = 'Maximum 2 loaves per order. ' + PRICE_PER_LOAF + ' ' + CURRENCY + ' per loaf.';
+        FLAVORS.forEach(function (f) {
+          var opt1 = document.createElement('option');
+          opt1.value = f.key;
+          opt1.textContent = f.label + ' (' + f.price + ' ' + CURRENCY + ')';
+          loaf1Select.appendChild(opt1);
+        });
+        var noneOpt = document.createElement('option');
+        noneOpt.value = 'none';
+        noneOpt.textContent = '— None (order just 1 loaf) —';
+        loaf2Select.appendChild(noneOpt);
+        FLAVORS.forEach(function (f) {
+          var opt2 = document.createElement('option');
+          opt2.value = f.key;
+          opt2.textContent = f.label + ' (' + f.price + ' ' + CURRENCY + ')';
+          loaf2Select.appendChild(opt2);
+        });
         updateLiveTotal();
         if (!data.options || data.options.length === 0) {
           showMsg('err', 'No pickup slots are currently available. Please check back soon!');
@@ -245,7 +269,8 @@
         name: document.getElementById('name').value,
         phone: document.getElementById('phone').value,
         email: document.getElementById('email').value,
-        loaves: document.getElementById('loaves').value,
+        loaf1: loaf1Select.value,
+        loaf2: loaf2Select.value,
         pickupDate: pickupSelect.value
       };
 
@@ -281,7 +306,8 @@
         'Your order has been received, ' + data.name + '.';
       document.getElementById('orderDetails').innerHTML =
         '<div><b>Order ID:</b> ' + res.orderId + '</div>' +
-        '<div><b>Loaves:</b> ' + res.loaves + '</div>' +
+        '<div><b>Loaf 1:</b> ' + res.loaf1 + '</div>' +
+        (res.loaf2 ? '<div><b>Loaf 2:</b> ' + res.loaf2 + '</div>' : '') +
         '<div><b>Total:</b> ' + res.total + ' ' + res.currency + '</div>' +
         '<div><b>Pickup date:</b> ' + res.pickupDateLabel + '</div>';
     }
