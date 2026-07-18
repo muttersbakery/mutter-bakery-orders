@@ -125,6 +125,15 @@
     border: 0;
   }
   .loading-note { font-size: 14px; color: var(--muted); text-align: center; padding: 24px 0; }
+  .field-error {
+    display: none;
+    color: #8a2c1d;
+    font-size: 12px;
+    margin-top: 5px;
+    font-weight: bold;
+  }
+  .field-error.show { display: block; }
+  input.invalid, .pay-options.invalid { border-color: #c1502e; box-shadow: 0 0 0 2px rgba(193,80,46,0.15); }
   .pay-options { display: flex; gap: 12px; }
   .pay-option {
     flex: 1;
@@ -169,12 +178,15 @@
       <form id="orderForm" style="display:none;">
         <label for="name">Full name</label>
         <input type="text" id="name" required>
+        <div class="field-error" id="errName"></div>
 
         <label for="phone">Phone number</label>
-        <input type="tel" id="phone" required>
+        <input type="tel" id="phone" inputmode="numeric" autocomplete="tel" placeholder="01XXXXXXXXX" required>
+        <div class="field-error" id="errPhone"></div>
 
         <label for="email">Email address</label>
-        <input type="email" id="email" required>
+        <input type="email" id="email" autocomplete="email" placeholder="you@example.com" required>
+        <div class="field-error" id="errEmail"></div>
 
         <label for="loaf1">Loaf 1 flavor</label>
         <select id="loaf1" required></select>
@@ -187,6 +199,7 @@
         <label for="pickupDate">Preferred pickup date</label>
         <input type="date" id="pickupDate" required>
         <div class="note" id="dateNote">Pick any day, 3&ndash;14 days from today.</div>
+        <div class="field-error" id="errDate"></div>
 
         <label>Payment method</label>
         <div class="pay-options">
@@ -194,6 +207,7 @@
           <label class="pay-option"><input type="radio" name="paymentMethod" value="cash" required> Cash</label>
         </div>
         <div class="note">Choosing InstaPay? Your confirmation email will include the payment link.</div>
+        <div class="field-error" id="errPay"></div>
 
         <button type="submit" id="submitBtn">Place order</button>
       </form>
@@ -256,16 +270,91 @@
       return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
 
-    // Flag fully-booked dates as soon as they're picked.
-    pickupInput.addEventListener('change', function () {
-      if (pickupInput.value && UNAVAILABLE_DATES.indexOf(pickupInput.value) !== -1) {
-        pickupInput.setCustomValidity('That week is fully booked — please pick a date in a different week.');
-        showMsg('err', 'That week is fully booked — please pick a date in a different week.');
-      } else {
-        pickupInput.setCustomValidity('');
-        msg.style.display = 'none';
-        msg.className = 'msg';
-      }
+    // ----- Inline field validation -----
+    function setErr(inputEl, errEl, text) {
+      errEl.textContent = text;
+      errEl.classList.add('show');
+      if (inputEl) inputEl.classList.add('invalid');
+    }
+    function clearErr(inputEl, errEl) {
+      errEl.textContent = '';
+      errEl.classList.remove('show');
+      if (inputEl) inputEl.classList.remove('invalid');
+    }
+
+    function isValidEmail(v) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((v || '').trim());
+    }
+    // Normalize to local Egyptian form (01XXXXXXXXX), stripping spaces/+/country code.
+    function normalizePhone(raw) {
+      var d = (raw || '').replace(/\D/g, '');
+      if (d.indexOf('0020') === 0) d = d.slice(4);
+      else if (d.length === 12 && d.indexOf('20') === 0) d = d.slice(2);
+      if (d.length === 10 && d.charAt(0) === '1') d = '0' + d;
+      return d;
+    }
+    function isValidPhone(raw) {
+      return /^01[0125]\d{8}$/.test(normalizePhone(raw));
+    }
+
+    var nameInput = document.getElementById('name');
+    var phoneInput = document.getElementById('phone');
+    var emailInput = document.getElementById('email');
+    var payOptionsEl = document.querySelector('.pay-options');
+    var errName = document.getElementById('errName');
+    var errPhone = document.getElementById('errPhone');
+    var errEmail = document.getElementById('errEmail');
+    var errDate = document.getElementById('errDate');
+    var errPay = document.getElementById('errPay');
+
+    // Validate one field; returns true if valid. When `live` is true, don't
+    // flag an empty field yet (used for typing feedback vs. final submit).
+    function validateName(live) {
+      if (!nameInput.value.trim()) { if (!live) setErr(nameInput, errName, 'Please enter your name.'); return false; }
+      clearErr(nameInput, errName); return true;
+    }
+    function validatePhone(live) {
+      var v = phoneInput.value.trim();
+      if (!v) { if (!live) setErr(phoneInput, errPhone, 'Please enter your phone number.'); return false; }
+      if (!isValidPhone(v)) { setErr(phoneInput, errPhone, 'Enter a complete 11-digit Egyptian mobile number, e.g. 01012345678.'); return false; }
+      clearErr(phoneInput, errPhone); return true;
+    }
+    function validateEmail(live) {
+      var v = emailInput.value.trim();
+      if (!v) { if (!live) setErr(emailInput, errEmail, 'Please enter your email address.'); return false; }
+      if (!isValidEmail(v)) { setErr(emailInput, errEmail, 'That email doesn’t look right — check for a typo (e.g. name@gmail.com).'); return false; }
+      clearErr(emailInput, errEmail); return true;
+    }
+    function validateDate(live) {
+      var v = pickupInput.value;
+      if (!v) { if (!live) setErr(pickupInput, errDate, 'Please choose a pickup date.'); return false; }
+      if (pickupInput.min && v < pickupInput.min) { setErr(pickupInput, errDate, 'Too soon — pickup must be at least 3 days out (from ' + prettyDate(pickupInput.min) + ').'); return false; }
+      if (pickupInput.max && v > pickupInput.max) { setErr(pickupInput, errDate, 'Too far out — pickup must be within 14 days (by ' + prettyDate(pickupInput.max) + ').'); return false; }
+      if (UNAVAILABLE_DATES.indexOf(v) !== -1) { setErr(pickupInput, errDate, 'That day is fully booked — please pick another day.'); return false; }
+      clearErr(pickupInput, errDate); return true;
+    }
+    function validatePay(live) {
+      var picked = document.querySelector('input[name="paymentMethod"]:checked');
+      if (!picked) { if (!live) { errPay.textContent = 'Please choose a payment method.'; errPay.classList.add('show'); payOptionsEl.classList.add('invalid'); } return false; }
+      errPay.textContent = ''; errPay.classList.remove('show'); payOptionsEl.classList.remove('invalid'); return true;
+    }
+    function validateAll() {
+      // Evaluate all so every problem is shown at once; return combined result.
+      var ok = validateName(false);
+      ok = validatePhone(false) && ok;
+      ok = validateEmail(false) && ok;
+      ok = validateDate(false) && ok;
+      ok = validatePay(false) && ok;
+      return ok;
+    }
+
+    // Clear/replace each field's error as the customer edits it.
+    nameInput.addEventListener('input', function () { validateName(true); });
+    phoneInput.addEventListener('input', function () { validatePhone(true); });
+    emailInput.addEventListener('input', function () { validateEmail(true); });
+    pickupInput.addEventListener('change', function () { validateDate(false); });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="paymentMethod"]'), function (r) {
+      r.addEventListener('change', function () { validatePay(true); });
     });
 
     // Load available pickup dates (and current pricing) on page load.
@@ -314,16 +403,25 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      msg.style.display = 'none';
+      msg.className = 'msg';
+
+      // Block submission until every field is valid; show where each problem is.
+      if (!validateAll()) {
+        var firstBad = document.querySelector('.invalid, .pay-options.invalid');
+        if (firstBad) { firstBad.scrollIntoView({ block: 'center' }); if (firstBad.focus) firstBad.focus(); }
+        return;
+      }
+
       var btn = document.getElementById('submitBtn');
       btn.disabled = true;
       btn.textContent = 'Placing order...';
-      msg.style.display = 'none';
 
       var payEl = document.querySelector('input[name="paymentMethod"]:checked');
       var data = {
-        name: document.getElementById('name').value,
-        phone: document.getElementById('phone').value,
-        email: document.getElementById('email').value,
+        name: document.getElementById('name').value.trim(),
+        phone: normalizePhone(document.getElementById('phone').value),
+        email: document.getElementById('email').value.trim(),
         loaf1: loaf1Select.value,
         loaf2: loaf2Select.value,
         pickupDate: pickupInput.value,
