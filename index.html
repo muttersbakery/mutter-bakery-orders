@@ -358,7 +358,35 @@
     });
 
     // Load available pickup dates (and current pricing) on page load.
-    fetch(API_URL)
+    // Fetch with a timeout and a couple of automatic retries, so one slow
+    // or dropped response doesn't immediately show the "Could not reach" error.
+    function fetchWithRetry(url, opts) {
+      opts = opts || {};
+      var timeout = opts.timeout || 15000;
+      var retries = opts.retries != null ? opts.retries : 2;
+      function attempt(n) {
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, timeout);
+        return fetch(url, { signal: controller.signal })
+          .then(function (res) {
+            clearTimeout(timer);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res;
+          })
+          .catch(function (err) {
+            clearTimeout(timer);
+            if (n < retries) {
+              if (loadingNote) loadingNote.textContent = 'Still loading, one moment…';
+              return new Promise(function (r) { setTimeout(r, 800 * (n + 1)); })
+                .then(function () { return attempt(n + 1); });
+            }
+            throw err;
+          });
+      }
+      return attempt(0);
+    }
+
+    fetchWithRetry(API_URL, { timeout: 15000, retries: 2 })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         loadingNote.style.display = 'none';
